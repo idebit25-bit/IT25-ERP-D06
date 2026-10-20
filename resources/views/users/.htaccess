@@ -1,0 +1,13 @@
+DirectoryIndex index.php
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+    
+    # Si la petición es un archivo o carpeta real, entra directo
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    
+    # Si no existe el archivo (rutas de Laravel), mándalo a index.php pasando la query string
+    RewriteRule ^(.*)$ index.php?/$1 [L,QSA]
+</IfModule>

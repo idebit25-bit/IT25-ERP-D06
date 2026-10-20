@@ -1,0 +1,22 @@
+node_modules
+vendor
+.env
+.env.*
+public/storage
+storage/app/public/videos
+public/storage/videos
+*.mp4
+
+# Datos y archivos propios de cada instalación
+/storage/**
+/public/uploads/
+/bootstrap/cache/*
+!/bootstrap/cache/.gitignore
+/database/*.sqlite*
+/induccion
+/build/
+/dist/
+/.phpunit.result.cache
+*.sql
+*.sql.gz
+!.env.example
