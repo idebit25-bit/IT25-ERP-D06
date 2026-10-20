@@ -28,70 +28,13 @@ class PageController extends Controller
      */
     private function userCanAccessPage($user, $page)
     {
-        if (!$user) return false;
-
-        // Helper para remover tildes y convertir a minúsculas en UTF-8
-        $clean = function ($value) {
-            $str = mb_strtolower(trim((string)$value), 'UTF-8');
-            return str_replace(['í', 'á', 'é', 'ó', 'ú', 'ñ'], ['i', 'a', 'e', 'o', 'u', 'n'], $str);
-        };
-
-        $roleClean = $clean($user->role ?? '');
-        $tipoClean = $clean($user->tipo_usuario ?? '');
-        $puestoClean = $clean($user->puesto ?? '');
-        $areaClean = $clean($user->area ?? '');
-
-        if ($roleClean === 'admin' || $tipoClean === 'admin') {
-            return true;
-        }
-
-        $destinadoRaw = $page->destinado_a;
-        $listaPuestos = [];
-
-        if (is_string($destinadoRaw)) {
-            if (str_starts_with(trim($destinadoRaw), '[') || str_starts_with(trim($destinadoRaw), '{')) {
-                $decoded = json_decode($destinadoRaw, true);
-                $listaPuestos = is_array($decoded) ? $decoded : [$destinadoRaw];
-            } else {
-                $listaPuestos = explode(',', $destinadoRaw);
-            }
-        } else {
-            $listaPuestos = (array) $destinadoRaw;
-        }
-
-        // Normalizar la lista asignada a la página
-        $puestosNormalizados = array_map($clean, $listaPuestos);
-
-        // Permiso universal (Ambos, Todos, General)
-        if (array_intersect(['ambos', 'todos', 'general'], $puestosNormalizados)) {
-            return true;
-        }
-
-        // Evaluar perfil Estadía (tolera 'estadia' y 'estadía')
-        $esEstadia = str_contains($roleClean, 'estadia') ||
-            str_contains($tipoClean, 'estadia') ||
-            str_contains($puestoClean, 'estadia');
-
-        if ($esEstadia) {
-            return in_array('estadia', $puestosNormalizados);
-        }
-
-        // Evaluar perfiles/puestos de Colaboradores
-        if (in_array('colaborador', $puestosNormalizados)) {
-            return true;
-        }
-
-        // Verificar si el puesto, área o tipo exacto coincide
-        return ($puestoClean && in_array($puestoClean, $puestosNormalizados)) ||
-            ($areaClean && in_array($areaClean, $puestosNormalizados)) ||
-            ($tipoClean && in_array($tipoClean, $puestosNormalizados));
+        return $user && $page->accessibleBy($user);
     }
-
     public function startInduction()
     {
         $user = Auth::user();
 
-        if (strtolower($user->role ?? '') === 'admin' || strtolower($user->tipo_usuario ?? '') === 'admin') {
+        if ($user->role === 'admin') {
             $firstPage = Page::orderBy('order', 'asc')->first();
             if ($firstPage) {
                 $identifier = !empty($firstPage->slug) ? $firstPage->slug : $firstPage->id;
@@ -100,12 +43,10 @@ class PageController extends Controller
             return redirect()->route('pages.index');
         }
 
-        $pages = Page::orderBy('order', 'asc')->get();
+        $pages = Page::with('questions')->orderBy('order', 'asc')->orderBy('id')->get();
         $firstPage = $pages->first(fn($page) => $this->userCanAccessPage($user, $page));
 
-        if (!$firstPage) {
-            $firstPage = $pages->first();
-        }
+
 
         if ($firstPage) {
             $identifier = !empty($firstPage->slug) ? $firstPage->slug : $firstPage->id;
@@ -119,10 +60,10 @@ class PageController extends Controller
     {
         $currentUser = Auth::user();
 
-        if ($currentUser && ($currentUser->role === 'admin' || $currentUser->tipo_usuario === 'admin')) {
-            $allPagesAllowed = Page::orderBy('order', 'asc')->get();
+        if ($currentUser && $currentUser->role === 'admin') {
+            $allPagesAllowed = Page::with('questions')->orderBy('order', 'asc')->orderBy('id')->get();
         } else {
-            $allPages = Page::orderBy('order', 'asc')->get();
+            $allPages = Page::with('questions')->orderBy('order', 'asc')->orderBy('id')->get();
             $allPagesAllowed = $allPages->filter(fn($page) => $this->userCanAccessPage($currentUser, $page))->values();
         }
 
@@ -144,6 +85,15 @@ class PageController extends Controller
         }
 
         $questions = $item->questions()->where('is_active', 1)->get();
+        $questionResponses = $currentUser->responses()
+            ->whereIn('question_id', $questions->pluck('id'))
+            ->get()->keyBy('question_id');
+        $choiceIds = $questions->where('question_type', 'opcion_multiple')->pluck('id')->all();
+        $gradedResponses = $questionResponses->whereIn('question_id', $choiceIds)
+            ->filter(fn($response) => $response->is_correct !== null);
+        $score = $gradedResponses->isNotEmpty()
+            ? (int) round($gradedResponses->where('is_correct', 1)->count() / $gradedResponses->count() * 100)
+            : null;
 
         if (Auth::check() && Auth::user()->role === 'user') {
             /** @var \App\Models\User $user */
@@ -153,44 +103,14 @@ class PageController extends Controller
             }
         }
 
-        // Obtener páginas previamente vistas por el usuario
-        $paginasVistasIds = ($currentUser && method_exists($currentUser, 'inductionViewed'))
-            ? $currentUser->inductionViewed()->pluck('pages.id')->toArray()
-            : [];
-
-        // Validar estado de completado de la página actual
-        $isCompleted = false;
-        if ($currentUser) {
-            if ($currentUser->role === 'admin') {
-                $isCompleted = true;
-            } elseif ($questions->count() > 0) {
-                $answeredCount = \App\Models\QuestionUserResponse::whereIn('question_id', $questions->pluck('id'))
-                    ->where('user_id', $currentUser->id)
-                    ->count();
-                $isCompleted = ($answeredCount === $questions->count());
-            } else {
-                $isCompleted = in_array($item->id, $paginasVistasIds);
-            }
-        }
-
+        $completedIds = $currentUser->inductionSummary($allPagesAllowed)['completed_ids'];
+        $isCompleted = $currentUser->role === 'admin' || in_array($item->id, $completedIds);
         // Construir barra lateral con lógica de progreso actualizada
         $sidebarProgress = [];
         $canAccessNext = true;
 
         foreach ($allPagesAllowed as $p) {
-            $pQuestions = $p->questions()->where('is_active', 1)->get();
-            $pCompleted = false;
-
-            if ($currentUser->role === 'admin') {
-                $pCompleted = true;
-            } elseif ($pQuestions->count() > 0) {
-                $pAnswered = \App\Models\QuestionUserResponse::whereIn('question_id', $pQuestions->pluck('id'))
-                    ->where('user_id', $currentUser->id)
-                    ->count();
-                $pCompleted = ($pAnswered === $pQuestions->count());
-            } else {
-                $pCompleted = in_array($p->id, $paginasVistasIds);
-            }
+            $pCompleted = $currentUser->role === 'admin' || in_array($p->id, $completedIds);
 
             $isActive = ($p->id == $item->id);
 
@@ -228,6 +148,8 @@ class PageController extends Controller
             'item'            => $item,
             'pages'           => $allPagesAllowed,
             'questions'       => $questions,
+            'questionResponses' => $questionResponses,
+            'score'           => $score,
             'isCompleted'     => $isCompleted,
             'prevPageUrl'     => $prevPageUrl,
             'nextPageUrl'     => $nextPageUrl,
@@ -366,111 +288,14 @@ class PageController extends Controller
 
     public function show(string $slug)
     {
-        $user = Auth::user();
-        $page = Page::with(['questions' => function ($q) {
-            $q->where('is_active', 1)->orderBy('order', 'asc');
-        }])->where('slug', $slug)->firstOrFail();
-
-        if ($user && method_exists($user, 'inductionViewed')) {
-            $user->inductionViewed()->syncWithoutDetaching([$page->id]);
-        }
-
-        $questions = $page->questions;
-        $totalQuestions = $questions->count();
-        $answeredCount = 0;
-
-        if ($user) {
-            foreach ($questions as $q) {
-                if ($q->userResponses()->where('user_id', $user->id)->exists()) {
-                    $answeredCount++;
-                }
-            }
-        }
-
-        if ($user && $user->role === 'admin') {
-            $isCompleted = true;
-            $prevPage = Page::where('order', '<', $page->order)->orderBy('order', 'desc')->first();
-            $nextPage = Page::where('order', '>', $page->order)->orderBy('order', 'asc')->first();
-            $allPages = Page::orderBy('order', 'asc')->get();
-        } else {
-            if ($totalQuestions > 0) {
-                $isCompleted = ($answeredCount === $totalQuestions);
-            } else {
-                $paginasVistasIds = ($user && method_exists($user, 'inductionViewed'))
-                    ? $user->inductionViewed()->pluck('pages.id')->toArray()
-                    : [];
-                $isCompleted = in_array($page->id, $paginasVistasIds);
-            }
-
-            // Usamos la colección con el filtro php flexible para omitir problemas de casing en SQL
-            $allPages = Page::orderBy('order', 'asc')->get()->filter(function ($p) use ($user) {
-                return $this->userCanAccessPage($user, $p);
-            })->values();
-
-            $currentIndex = $allPages->search(function ($item) use ($page) {
-                return $item->id === $page->id;
-            });
-
-            $prevPage = ($currentIndex !== false && $currentIndex > 0) ? $allPages[$currentIndex - 1] : null;
-            $nextPage = ($currentIndex !== false && $currentIndex < $allPages->count() - 1) ? $allPages[$currentIndex + 1] : null;
-        }
-
-        return view('pages.template', [
-            'page'            => $page,
-            'item'            => $page,
-            'pages'           => $allPages,
-            'questions'       => $questions,
-            'isCompleted'     => $isCompleted,
-            'prevPageUrl'     => $prevPage ? route('pages.show', $prevPage->slug) : null,
-            'nextPageUrl'     => $nextPage ? route('pages.show', $nextPage->slug) : (($user && $user->role === 'admin') ? null : route('induction.completed')),
-        ]);
+        return $this->showInduction($slug);
     }
-
     public function showLobby()
     {
         /** @var \App\Models\User $user */
         $user = Auth::user();
 
-        // Obtener páginas ordenadas
-        $pages = Page::with('questions')->orderBy('order', 'asc')->get();
-        $paginasAsignadas = $pages->filter(fn($page) => $this->userCanAccessPage($user, $page));
-
-        $totalAsignadas = $paginasAsignadas->count();
-        $completadas = 0;
-
-        if ($totalAsignadas > 0 && $user) {
-            // Obtenemos los IDs de las páginas que el usuario ya visitó
-            $paginasVistasIds = method_exists($user, 'inductionViewed')
-                ? $user->inductionViewed()->pluck('pages.id')->toArray()
-                : [];
-
-            foreach ($paginasAsignadas as $p) {
-                if ($user->role === 'admin') {
-                    $completadas++;
-                    continue;
-                }
-
-                $pQuestions = $p->questions->where('is_active', 1);
-
-                if ($pQuestions->count() > 0) {
-                    // Si tiene preguntas, DEBE haber respondido TODAS
-                    $pAnswered = \App\Models\QuestionUserResponse::whereIn('question_id', $pQuestions->pluck('id'))
-                        ->where('user_id', $user->id)
-                        ->count();
-
-                    if ($pAnswered === $pQuestions->count()) {
-                        $completadas++;
-                    }
-                } else {
-                    // Si NO tiene preguntas, DEBE haber visitado la página al menos una vez
-                    if (in_array($p->id, $paginasVistasIds)) {
-                        $completadas++;
-                    }
-                }
-            }
-        }
-
-        $progreso = $totalAsignadas > 0 ? round(($completadas / $totalAsignadas) * 100) : 0;
+        $progreso = $user->induction_viewed_percentage;
 
         // Normalización para verificar si es perfil de Estadía
         $clean = function ($value) {
@@ -491,12 +316,17 @@ class PageController extends Controller
 
     public function completedInduction()
     {
+        $user = Auth::user();
+        if ($user->role !== 'admin' && $user->induction_viewed_percentage < 100) {
+            return redirect()->route('lobby')->with('error', 'Aún tienes módulos pendientes.');
+        }
         return view('induction.completed');
     }
 
     public function downloadAttachment($id)
     {
         $page = Page::findOrFail($id);
+        abort_unless($page->accessibleBy(Auth::user()), 403, 'No tienes acceso a este módulo.');
         $filePath = public_path('storage/' . $page->attachment);
 
         if (!$page->attachment || !file_exists($filePath)) {

@@ -4,6 +4,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+    <link rel="icon" type="image/png" href="{{ asset('images/logob.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Crear Preguntas</title>
@@ -382,8 +383,9 @@
     <div class="report-container">
         
         <div class="card">
-            <h2>Crear Preguntas</h2>
             
+            <h2>Crear Preguntas</h2>
+            @include('partials.induction_messages')
             <form action="{{ route('questions.store') }}" method="POST">
                 @csrf
 

@@ -64,53 +64,41 @@ class User extends Authenticatable
         return $this->hasMany(QuestionUserResponse::class);
     }
 
-    /**
-     * Calcula dinámicamente el progreso porcentual basándose en su puesto de trabajo real
-     */
-    public function getInductionViewedPercentageAttribute()
+    public function inductionSummary($pages = null): array
     {
-        $allPages = Page::all();
-        
-        $puestoUser = str_replace(['í', 'á', 'é', 'ó', 'ú'], ['i', 'a', 'e', 'o', 'u'], mb_strtolower(trim($this->puesto ?? '')));
-        $areaUser = str_replace(['í', 'á', 'é', 'ó', 'ú'], ['i', 'a', 'e', 'o', 'u'], mb_strtolower(trim($this->area ?? '')));
-        $tipoUser = str_replace(['í', 'á', 'é', 'ó', 'ú'], ['i', 'a', 'e', 'o', 'u'], mb_strtolower(trim($this->tipo_usuario ?? '')));
-        
-        $esEstadia = str_contains(strtolower($this->role ?? ''), 'estadia') ||
-                     str_contains(strtolower($this->tipo_usuario ?? ''), 'estadia') ||
-                     str_contains(strtolower($this->puesto ?? ''), 'estadia');
-
-        $assignedPages = $allPages->filter(function($page) use ($puestoUser, $areaUser, $tipoUser, $esEstadia) {
-            $destinadoRaw = $page->destinado_a;
-            $listaPuestos = is_array($destinadoRaw) ? $destinadoRaw : (is_string($destinadoRaw) ? explode(',', $destinadoRaw) : (array)$destinadoRaw);
-            
-            $puestosNormalizados = array_map(function($item) {
-                $str = mb_strtolower(trim((string)$item));
-                return str_replace(['í', 'á', 'é', 'ó', 'ú'], ['i', 'a', 'e', 'o', 'u'], $str);
-            }, $listaPuestos);
-
-            if (array_intersect(['ambos', 'todos', 'general'], $puestosNormalizados)) {
-                return true;
-            }
-
-            if ($esEstadia) {
-                return in_array('estadia', $puestosNormalizados);
-            }
-
-            return in_array('colaborador', $puestosNormalizados) ||
-                   ($puestoUser && in_array($puestoUser, $puestosNormalizados)) ||
-                   ($areaUser && in_array($areaUser, $puestosNormalizados)) ||
-                   ($tipoUser && in_array($tipoUser, $puestosNormalizados));
+        $pages ??= Page::with('questions')->orderBy('order')->orderBy('id')->get();
+        $assigned = $pages->filter(fn($page) => $page->accessibleBy($this));
+        $viewed = $this->relationLoaded('inductionViewed')
+            ? $this->inductionViewed->pluck('id')->all()
+            : $this->inductionViewed()->pluck('pages.id')->all();
+        $responses = $this->relationLoaded('responses') ? $this->responses : $this->responses()->get();
+        $answered = $responses->filter(fn($r) => trim((string) $r->answer) !== '')->pluck('question_id')->unique()->all();
+        $completedPages = $assigned->filter(function ($page) use ($viewed, $answered) {
+            $activeIds = $page->questions->where('is_active', 1)->pluck('id')->all();
+            return $activeIds ? !array_diff($activeIds, $answered) : in_array($page->id, $viewed);
         });
-
-        $totalSteps = $assignedPages->count();
-        if ($totalSteps <= 0) return 0;
-
-        $completedSteps = $this->inductionViewed()->whereIn('page_id', $assignedPages->pluck('id'))->distinct()->count();
-        $percentage = round(($completedSteps / $totalSteps) * 100);
-
-        return min($percentage, 100);
+        $completed = $completedPages->count();
+        $activeQuestionIds = $assigned->flatMap(fn($page) => $page->questions->where('is_active', 1)->where('question_type', 'opcion_multiple')->pluck('id'))->all();
+        $scored = $responses->whereIn('question_id', $activeQuestionIds)->filter(fn($r) => $r->is_correct !== null);
+        $correct = $scored->filter(fn($r) => (bool) $r->is_correct)->count();
+        $total = $assigned->count();
+        $percentage = $total ? (int) round($completed / $total * 100) : 0;
+        if ($total > $completed) $percentage = min(99, $percentage);
+        $days = max(1, (int) config('induction.delay_days', 7));
+        return [
+            'total' => $total, 'completed' => $completed, 'percentage' => $percentage,
+            'completed_ids' => $completedPages->pluck('id')->all(),
+            'scored' => $scored->count(), 'correct' => $correct,
+            'accuracy' => $scored->count() ? (int) round($correct / $scored->count() * 100) : null,
+            'overdue' => $this->role === 'user' && !$this->deleted_at && $total > $completed
+                && $this->created_at && $this->created_at->lte(now()->subDays($days)),
+        ];
     }
 
+    public function getInductionViewedPercentageAttribute()
+    {
+        return $this->inductionSummary()['percentage'];
+    }
     public function viewedPages()
     {
         return $this->belongsToMany(Page::class, 'user_page_views')->withTimestamps();

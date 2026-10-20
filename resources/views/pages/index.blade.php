@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+    <link rel="icon" type="image/png" href="{{ asset('images/logob.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Administrar Páginas y Preguntas</title>
@@ -513,6 +514,8 @@
         <div class="card">
             <h1>Administrar Contenido</h1>
 
+            @include('partials.induction_messages')
+
             <div class="actions-top">
                 <a href="{{ route('pages.create') }}" class="btn btn-dark">+ Nueva Página</a>
                 <a href="{{ route('questions.create') }}" class="btn btn-dark">+ Nueva Pregunta</a>
@@ -604,6 +607,10 @@
                                 <td class="actions-cell" style="text-align: right; white-space: nowrap;">
                                     <a href="{{ route('pages.edit', $page->id) }}" class="btn btn-edit">Editar</a>
                                     <a href="{{ route('pages.show', $page->slug) }}" class="btn btn-view">Ver</a>
+                                    <form method="POST" action="{{ route('admin.notifyContent', $page->id) }}" style="display: inline;">
+                                        @csrf
+                                        <button type="submit" class="btn btn-dark" onclick="return confirm('¿Avisar de este contenido a los participantes asignados?')">Avisar contenido</button>
+                                    </form>
                                     <form action="{{ route('pages.destroy', $page->id) }}" method="POST" style="display:inline;">
                                         @csrf @method('DELETE')
                                         <button type="submit" class="btn btn-danger" onclick="return confirm('¿Eliminar página?')">X</button>

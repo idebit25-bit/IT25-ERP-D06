@@ -19,28 +19,19 @@ class UserController extends Controller
     {
         // 1. Traemos TODOS los usuarios en un array crudo de PHP para procesarlos primero
         $allUsers = User::withTrashed()
-            ->withCount('inductionViewed')
+            ->with(['inductionViewed', 'responses'])
             ->get();
+        $pages = Page::with('questions')->orderBy('order')->orderBy('id')->get();
 
         // 2. Procesamos los datos usando PHP puro sin tocar objetos complejos de Laravel
-        $processedUsers = $allUsers->map(function ($user) {
+        $processedUsers = $allUsers->map(function ($user) use ($pages) {
             // --- NUEVO: Formateamos la fecha de registro para la vista y exportaciones ---
             $user->fecha_registro = $user->created_at
                 ? $user->created_at->format('d/m/Y H:i')
                 : '---';
 
             if ($user->role === 'user') {
-                // Agrupamos las condiciones con una función anónima
-                $totalInductionForUser = Page::where(function ($query) use ($user) {
-                    $query->where('destinado_a', $user->tipo_usuario)
-                        ->orWhere('destinado_a', 'Ambos');
-                })->count();
-
-                $pagesViewed = $user->induction_viewed_count;
-
-                $user->inductionViewedPercentage = $totalInductionForUser > 0
-                    ? round(($pagesViewed / $totalInductionForUser) * 100)
-                    : 0;
+                $user->inductionViewedPercentage = $user->inductionSummary($pages)['percentage'];
             } else {
                 $user->inductionViewedPercentage = null;
             }
@@ -78,16 +69,15 @@ class UserController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate([
+        $data = $request->validate([
             'name'             => 'required',
             'email'            => 'required|email|unique:users',
             'password'         => 'required|min:6',
             'role'             => 'required|in:admin,user',
             'tipo_usuario'     => 'required|in:Colaborador,Estadía',
-            'tipo_colaborador' => 'nullable|string|max:255', // <-- CORREGIDO
+            'area'             => 'nullable|string|max:255',
         ]);
 
-        $data = $request->all();
         $data['password'] = Hash::make($data['password']);
 
         User::create($data);
@@ -107,19 +97,19 @@ class UserController extends Controller
 
     public function update(Request $request, User $user)
     {
-        $request->validate([
+        $data = $request->validate([
             'name'             => 'required|string|max:255',
             'email'            => 'required|email|unique:users,email,' . $user->id,
             'role'             => 'required|in:admin,user',
             'tipo_usuario'     => 'required_if:role,user|nullable|in:Colaborador,Estadía',
-            'tipo_colaborador' => 'nullable|string|max:255', // <-- CORREGIDO
+            'area'             => 'nullable|string|max:255',
+            'password'         => 'nullable|string|min:6',
         ]);
 
-        $data = $request->all();
 
         if ($data['role'] === 'admin') {
-            $data['tipo_usuario'] = 'Ambos';
-            $data['tipo_colaborador'] = null; // <-- CORREGIDO
+            $data['tipo_usuario'] = 'Colaborador';
+            $data['area'] = null;
         }
 
         if (!empty($data['password'])) {
@@ -194,20 +184,8 @@ class UserController extends Controller
     {
         $currentUser = Auth::user();
 
-        if ($currentUser->role === 'admin') {
-            $pages = Page::orderBy('order', 'asc')->get();
-        } else {
-            $pages = Page::where(function ($query) use ($currentUser) {
-                $query->where('destinado_a', $currentUser->tipo_usuario)
-                    ->orWhere('destinado_a', 'Ambos');
-            })->orderBy('order', 'asc')->get();
-        }
-
-        $questions = Question::orderBy('order', 'asc')->get();
-
-        $items = $pages->concat($questions)->sortBy('order')->values();
-        $firstItem = $items->first();
-
+        $firstItem = Page::orderBy('order')->orderBy('id')->get()
+            ->first(fn($page) => $page->accessibleBy($currentUser));
         if (!$firstItem) {
             return back()->with('error', 'No se encontró ningún contenido asignado a tu perfil de inducción.');
         }

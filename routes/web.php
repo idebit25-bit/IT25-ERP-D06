@@ -3,7 +3,6 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\VideoController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\StepController;
@@ -47,21 +46,18 @@ Route::middleware(['auth'])->group(function () {
      Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
      // Página principal de Admin
-     Route::get('/admin', [AdminController::class, 'index'])->name('admin');
+     Route::get('/admin', [AdminController::class, 'index'])->middleware('admin')->name('admin');
 
      // Perfil
      Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
      Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
      Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
-     // Video
-     Route::get('/video', [VideoController::class, 'index'])->name('video');
-
      // Páginas (CRUD)
+     Route::middleware('admin')->group(function () {
      Route::resource('pages', PageController::class)->except(['show']);
      Route::post('/pages/reorder', [PageController::class, 'reorder'])->name('pages.reorder');
      Route::post('/pages/sort', [PageController::class, 'sort'])->name('pages.sort');
-     Route::get('/pages/{slug}', [PageController::class, 'show'])->name('pages.show');
 
      // Pasos (Steps)
      Route::resource('steps', StepController::class)->except(['show']);
@@ -77,12 +73,16 @@ Route::middleware(['auth'])->group(function () {
 
      // Preguntas (CRUD y Ordenamiento)
      Route::resource('questions', QuestionController::class);
-     Route::post('/questions/sort', [QuestionController::class, 'sort'])->name('questions.sort');
+     Route::post('/questions/sort', [QuestionController::class, 'reorder'])->name('questions.sort');
      Route::post('/questions/reorder', [QuestionController::class, 'reorder'])->name('questions.reorder');
-     Route::post('/questions/answer', [QuestionController::class, 'answer'])->name('questions.answer');
 
      // Ruta para el envío manual de correos de aviso
-     Route::post('/admin/send-reminder/{id}', [AdminController::class, 'sendReminder'])->name('admin.sendReminder');
+     Route::post('/admin/send-reminder/{id}', [AdminController::class, 'sendReminder'])->middleware('throttle:5,1')->name('admin.sendReminder');
+     Route::post('/admin/notify-content/{id}', [AdminController::class, 'notifyContent'])->middleware('throttle:5,1')->name('admin.notifyContent');
+     });
+
+     Route::post('/questions/answer', [QuestionController::class, 'answer'])->name('questions.answer');
+     Route::get('/pages/{slug}', [PageController::class, 'show'])->middleware('check.progress')->name('pages.show');
 
      /*
 |--------------------------------------------------------------------------

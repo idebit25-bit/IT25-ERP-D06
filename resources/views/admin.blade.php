@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+    <link rel="icon" type="image/png" href="{{ asset('images/logob.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Panel Admin - Dashboard</title>
@@ -216,11 +217,11 @@
         /* --- CUADRÍCULA DE BOTONES --- */
         .dashboard-grid {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 30px;
-            width: 100%;
-            max-width: 900px;
-            margin: auto 0;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 30px clamp(40px, 7vw, 120px);
+            width: calc(100% - 80px);
+            max-width: 1200px;
+            margin: auto;
         }
 
         .action-card {
@@ -332,7 +333,7 @@
                 padding: 30px 20px;
                 margin-top: 70px;
             }
-            .dashboard-grid { grid-template-columns: 1fr; gap: 20px; }
+            .dashboard-grid { grid-template-columns: 1fr; gap: 20px; width: 100%; }
             .action-card { height: 120px; padding: 25px; }
         }
 
@@ -432,6 +433,30 @@
             <p>Bienvenido de vuelta. Utiliza las tarjetas de acceso inmediato o el menú lateral para gestionar la plataforma.</p>
         </div>
 
+        @include('partials.induction_messages')
+        @include('partials.induction_metrics')
+        <div class="induction-followup">
+            <h3>Participantes con atraso</h3>
+            <p>Desde el registro: {{ config('induction.delay_days') }} días o más y módulos pendientes.</p>
+            <div class="induction-followup-table">
+            <table>
+                <thead><tr><th>USUARIO</th><th>REGISTRO</th><th>AVANCE</th><th>ACCIÓN</th></tr></thead>
+                <tbody>
+                @forelse($overdueUsers as $user)
+                    <tr>
+                        <td>{{ $user->name }}</td>
+                        <td>{{ $user->created_at->format('d/m/Y') }}</td>
+                        <td>{{ $summaries[$user->id]['percentage'] }}%</td>
+                        <td><form method="POST" action="{{ route('admin.sendReminder', $user->id) }}">@csrf<button type="submit"><i class="fas fa-envelope" aria-hidden="true"></i> Avisar</button></form></td>
+                    </tr>
+                @empty
+                    <tr><td colspan="4">No hay participantes con atraso.</td></tr>
+                @endforelse
+                </tbody>
+            </table>
+            </div>
+        </div>
+
         <div class="dashboard-grid">
             
             <div class="action-card" onclick="startInduction()">
@@ -476,7 +501,7 @@
     }
 
     function toggleGearMenu(event) {
-        event.preventDefault();
+        if (event.target.closest('form')) return;
         event.stopPropagation(); // Evita que el evento escale al objeto window y lo cierre
         
         const dropdown = document.getElementById('gearDropdown');

@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+    <link rel="icon" type="image/png" href="{{ asset('images/logob.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Editar Pregunta</title>
@@ -348,6 +349,8 @@
     <div class="report-container">
         <div class="card">
             <h2>Editar Pregunta</h2>
+
+            @include('partials.induction_messages')
 
             <form action="{{ route('questions.update', $question->id) }}" method="POST">
                 @csrf

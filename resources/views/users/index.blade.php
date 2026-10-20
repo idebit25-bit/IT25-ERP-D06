@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+    <link rel="icon" type="image/png" href="{{ asset('images/logob.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lista de Usuarios</title>
@@ -207,6 +208,7 @@
         .btn:active { transform: scale(0.98); }
         
         .btn-export-container { display: flex; gap: 10px; }
+        .btn-export-container .btn { gap: 8px; }
         .btn-excel { background-color: #27ae60; }
         .btn-excel:hover { background-color: #219150; }
         .btn-pdf { background-color: #e74c3c; }

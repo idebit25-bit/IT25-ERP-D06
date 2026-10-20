@@ -8,9 +8,6 @@ class DatabaseSeeder extends Seeder
 {
     public function run()
     {
-        $this->call([
-            // Otros seeders que tengas...
-            DefaultUserSeeder::class, // Llamada a tu seeder
-        ]);
+        // Los usuarios y contenidos se administran desde la aplicación.
     }
 }

@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+    <link rel="icon" type="image/png" href="{{ asset('images/logob.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -1084,6 +1085,9 @@
                 @if(isset($questions) && $questions->count() > 0)
                     <div class="question-container">
                         <h2 style="font-family:'Archivo Black'; font-size:20px; color: #ffffff; text-align: left; margin-bottom: 25px; letter-spacing: 0.5px;">Evaluación</h2>
+                        @if($errors->any())
+                            <div role="alert" style="background: #c0392b; color: #fff; padding: 12px 20px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; line-height: 1.5;">{{ $errors->first() }}</div>
+                        @endif
                         <form action="{{ route('questions.answer') }}" method="POST">
                             @csrf
                             <input type="hidden" name="page_id" value="{{ $page->id }}">
@@ -1092,10 +1096,13 @@
                                 <div class="question-card">
                                     <span class="question-text">{{ $question->question_text }}</span>
                                     
-                                    @php 
-                                        $userResponse = $question->userResponses()->where('user_id', Auth::id())->first();
+                                    @php
+                                        $userResponse = $questionResponses->get($question->id);
                                         $isAnswered = !!$userResponse;
                                     @endphp
+                                    @if($isAnswered && !$isCompleted)
+                                        <input type="hidden" name="answers[{{ $question->id }}]" value="{{ $userResponse->answer }}">
+                                    @endif
 
                                     @if($question->question_type === 'opcion_multiple')
                                         @php $options = is_string($question->options) ? json_decode($question->options, true) : $question->options; @endphp
@@ -1123,6 +1130,9 @@
                             @else
                                 <div class="success-box">
                                     <i class="fas fa-check-circle" style="color: #27ae60; font-size: 18px;"></i> Sección completada con éxito, puedes avanzar.
+                                    @if($score !== null)
+                                        <div>Aciertos: {{ $score }}% en las preguntas de opción múltiple calificadas.</div>
+                                    @endif
                                 </div>
                             @endif
                         </form>

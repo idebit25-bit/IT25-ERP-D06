@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+    <link rel="icon" type="image/png" href="{{ asset('images/logob.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reporte de Progreso</title>
@@ -351,6 +352,8 @@
         td { padding: 12px; border-bottom: 1px solid #eee; font-size: 13px; color: #333; }
 
         .status-badge { padding: 5px 10px; border-radius: 15px; font-size: 10px; font-weight: bold; color: white; white-space: nowrap; }
+        .user-type-badge { display: inline-flex; flex-direction: column; align-items: flex-start; max-width: 100%; white-space: normal; line-height: 1.3; overflow-wrap: anywhere; }
+        .user-type-badge small { margin-top: 2px; }
         .correct { background: #27ae60; }
         .incorrect { background: #c0392b; }
         .open-q { background: #2980b9; }
@@ -629,12 +632,8 @@
         <div class="card">
             <h1>Reporte de Evaluaciones</h1>
 
-            @if(session('success'))
-                <div style="background-color: #27ae60; color: white; padding: 12px 20px; border-radius: 8px; margin-bottom: 20px; font-family: Arial, sans-serif; font-size: 14px; display: flex; align-items: center; gap: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
-                    <i class="fas fa-check-circle"></i>
-                    <span>{{ session('success') }}</span>
-                </div>
-            @endif
+            @include('partials.induction_metrics')
+            @include('partials.induction_messages')
 
             <div class="tabs-header">
                 <button class="tab-button active" onclick="switchTab(event, 'general-tab')">
@@ -679,7 +678,7 @@
                                     <tr class="general-row-item">
                                         <td><strong>{{ $user->name }}</strong></td>
                                         <td>
-                                            <span class="status-badge open-q" style="background-color: #f3f4f6; color: #1f2937; border: 1px solid #e5e7eb;">
+                                            <span class="status-badge open-q user-type-badge" style="background-color: #f3f4f6; color: #1f2937; border: 1px solid #e5e7eb;">
                                                 {{ $user->tipo_usuario ?? 'N/A' }}
                                                 @if($user->area)
                                                     <small style="display: block; font-size: 10px; color: #6b7280;">({{ $user->area }})</small>
@@ -722,6 +721,11 @@
                                     <div class="user-info-text">
                                         <h3 class="user-name-title">{{ $user->name }}</h3>
                                         <span class="user-email-subtitle">{{ $user->email }}</span>
+                                        <div style="font-size: 12px; margin-top: 6px;">
+                                            Avance: {{ $summaries[$user->id]['percentage'] }}% ·
+                                            Aciertos: {{ $summaries[$user->id]['accuracy'] === null ? 'Sin datos' : $summaries[$user->id]['accuracy'].'%' }}
+                                            @if($summaries[$user->id]['overdue'])<span class="status-badge incorrect">Con retraso</span>@endif
+                                        </div>
                                         <div style="margin-top: 4px;">
                                             <span style="background: #e1e7ff; color: #404eed; padding: 2px 8px; font-size: 11px; font-weight: bold; border-radius: 4px;">
                                                 {{ $user->tipo_usuario }} @if($user->area) | {{ $user->area }} @endif

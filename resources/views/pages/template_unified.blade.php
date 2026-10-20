@@ -3,6 +3,7 @@
 <html lang="es">
 
 <head>
+    <link rel="icon" type="image/png" href="{{ asset('images/logob.png') }}">
 
     <meta charset="UTF-8">
 
